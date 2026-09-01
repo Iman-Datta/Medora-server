@@ -6,17 +6,19 @@ const userSchema = new mongoose.Schema(
     password: { type: String },
     name: { type: String },
 
-    avatar: {type: String,required: false,
-    validate: {
-      validator: function (value) {
-        return /^(https?:\/\/)[^\s]+$/.test(value);
+    avatar: {
+      type: String,
+      required: false,
+      validate: {
+        validator: function (value) {
+          return /^(https?:\/\/)[^\s]+$/.test(value);
+        },
+        message: "Avatar must be a valid URL",
       },
-      message: "Avatar must be a valid URL"
-    }
-    }
+    },
 
     emailVerified: { type: Boolean, default: false },
-    emailVerificationToken: { type: String },
+    emailVerificationOTP: { type: String },
     emailVerificationExp: { type: Date },
 
     passwordResetOTP: { type: String },
