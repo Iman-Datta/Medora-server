@@ -2,25 +2,25 @@ const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema(
   {
-    email: { type: String, required: true, unique: true },
-    password: { type: String },
-    name: { type: String },
-
-    avatar: {type: String,required: false,
-    validate: {
-      validator: function (value) {
-        return /^(https?:\/\/)[^\s]+$/.test(value);
-      },
-      message: "Avatar must be a valid URL"
-    }
-    }
-
-    emailVerified: { type: Boolean, default: false },
-    emailVerificationToken: { type: String },
-    emailVerificationExp: { type: Date },
-
-    passwordResetOTP: { type: String },
-    passwordResetExp: { type: Date },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+    },
+    password: {
+      type: String,
+      required: true,
+    },
+    name: {
+      type: String,
+      required: true,
+    },
+    refreshTokenHash: {
+      type: String,
+      select: false,
+    },
   },
   { timestamps: true },
 );
