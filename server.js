@@ -27,12 +27,14 @@ mongoose
   .then(() => console.log("MongoDB Connected"))
   .catch((error) => console.log(error)); // Mongoose return promise
 
-// Auth routes
 const authRoutes = require("./routes/authRoutes");
 app.use("/auth", authRoutes);
 
 const medicineRoutes = require("./routes/medicineRoutes");
 app.use("/api/medicines", medicineRoutes);
+
+const prescriptionRoutes = require("./routes/prescriptionRoutes");
+app.use("/api/prescriptions", prescriptionRoutes);
 
 // Start server
 app.listen(process.env.PORT || 5000, () => {
