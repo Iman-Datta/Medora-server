@@ -54,6 +54,37 @@ router.post("/", async (req, res) => {
   }
 });
 
+router.post("/bulk", async (req, res) => {
+  try {
+    const { medicines } = req.body; // Expects array of medicine objects
+
+    if (!medicines || !Array.isArray(medicines) || medicines.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide an array of medicines to add.",
+      });
+    }
+
+    // Map medicines to attach user ID and default source
+    const medicinesToInsert = medicines.map((med) => ({
+      ...med,
+      userId: req.user,
+      source: med.source || "prescription_scan",
+    }));
+
+    const savedMedicines = await Medicine.insertMany(medicinesToInsert);
+
+    return res.status(201).json({
+      success: true,
+      message: `${savedMedicines.length} medicines saved successfully.`,
+      data: savedMedicines,
+    });
+  } catch (error) {
+    console.error("Bulk Save Error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 router.get("/", async (req, res) => {
   try {
     const medicines = await Medicine.find({
