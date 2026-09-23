@@ -29,7 +29,7 @@ const upload = multer({
 
 router.use(authMiddleware);
 
-// Helper delay function for 503 retry
+// Helper delay function for backoff
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 router.post("/parse", upload.single("prescription"), async (req, res) => {
@@ -88,19 +88,19 @@ Field Rules:
 Return ONLY raw JSON with no Markdown, ticks, or explanatory text.
     `;
 
-    // 1. Retrieve supported models dynamically from your API key
-    let candidateModels = [];
+    // 1. Fetch live available models for your API key dynamically
+    let discoveredModels = [];
     try {
-      const listResponse = await ai.models.list();
-      const rawList = listResponse.models || listResponse;
+      const listRes = await ai.models.list();
+      const rawList = listRes.models || listRes;
 
       if (Array.isArray(rawList)) {
-        candidateModels = rawList
+        discoveredModels = rawList
           .map((m) => (m.name ? m.name.replace("models/", "") : m))
           .filter(
             (name) =>
               typeof name === "string" &&
-              name.includes("flash") &&
+              (name.includes("flash") || name.includes("pro")) &&
               !name.includes("experimental"),
           );
       }
@@ -108,27 +108,29 @@ Return ONLY raw JSON with no Markdown, ticks, or explanatory text.
       console.warn("Dynamic model discovery failed:", e.message);
     }
 
-    // Fallback list if dynamic query fails
-    const fallbackList = [
+    // Modern supported models list
+    const fallbackModels = [
+      "gemini-3.6-flash",
+      "gemini-3.5-flash",
       "gemini-2.5-flash",
-      "gemini-1.5-flash",
-      "gemini-flash-latest",
     ];
 
-    const modelsToTry = [...new Set([...candidateModels, ...fallbackList])];
+    // Merge dynamically discovered models with fallback
+    const modelsToTry = [...new Set([...discoveredModels, ...fallbackModels])];
 
-    let response;
-    let lastError;
+    let response = null;
+    let lastError = null;
 
-    // 2. Iterate through candidate models with retry logic for 503
+    // Iterate through model candidates
     for (const modelName of modelsToTry) {
       let attempts = 0;
-      const maxAttempts = 2; // Retry once if busy
+      const maxAttempts = 2;
 
       while (attempts < maxAttempts) {
         try {
+          attempts++;
           console.log(
-            `Attempting OCR with model: ${modelName} (Attempt ${attempts + 1})...`,
+            `Attempting OCR with model: ${modelName} (Attempt ${attempts})...`,
           );
 
           response = await ai.models.generateContent({
@@ -141,28 +143,36 @@ Return ONLY raw JSON with no Markdown, ticks, or explanatory text.
 
           if (response && response.text) {
             console.log(
-              `Successfully parsed prescription using model: ${modelName}`,
+              `✅ Successfully parsed prescription using model: ${modelName}`,
             );
             break;
           }
         } catch (err) {
           lastError = err;
-          const status = err.status || err.code;
+          const status = err.status || err.code || err.statusCode;
+          const errorMessage = err.message || "";
 
           console.warn(
-            `Model ${modelName} returned status ${status}: ${err.message}`,
+            `Model ${modelName} returned status ${status || "Error"}: ${errorMessage}`,
           );
 
-          // If 503 (High Demand), wait 1.5s and retry before switching models
-          if (status === 503 || err.message?.includes("503")) {
-            attempts++;
+          if (
+            status === 503 ||
+            status === 429 ||
+            errorMessage.includes("503") ||
+            errorMessage.includes("UNAVAILABLE")
+          ) {
             if (attempts < maxAttempts) {
-              console.log("Server busy (503). Retrying in 1.5s...");
+              console.log(
+                `Server busy (503). Retrying ${modelName} in 1.5s...`,
+              );
               await sleep(1500);
               continue;
             }
           }
-          break; // Stop retrying this model and proceed to next candidate
+
+          // If 404, move immediately to next model
+          break;
         }
       }
 
@@ -173,17 +183,30 @@ Return ONLY raw JSON with no Markdown, ticks, or explanatory text.
 
     if (!response || !response.text) {
       throw (
-        lastError || new Error("All Gemini models are busy or unavailable.")
+        lastError ||
+        new Error("All Gemini OCR models are currently busy or unavailable.")
       );
     }
 
-    // Parse returned JSON text from Gemini
-    const parsedMedicines = JSON.parse(response.text);
+    // Clean markdown tick markers
+    let cleanJsonText = response.text.trim();
+    if (cleanJsonText.startsWith("```json")) {
+      cleanJsonText = cleanJsonText
+        .replace(/^```json\s*/, "")
+        .replace(/\s*```$/, "");
+    } else if (cleanJsonText.startsWith("```")) {
+      cleanJsonText = cleanJsonText
+        .replace(/^```\s*/, "")
+        .replace(/\s*```$/, "");
+    }
+
+    // Parse returned JSON string
+    const parsedMedicines = JSON.parse(cleanJsonText);
 
     return res.status(200).json({
       success: true,
       message: "Prescription parsed successfully",
-      count: parsedMedicines.length,
+      count: Array.isArray(parsedMedicines) ? parsedMedicines.length : 1,
       data: parsedMedicines,
     });
   } catch (error) {

@@ -144,3 +144,5 @@ vite.config.ts.timestamp-*
 node_modules/
 .env
 .env.local
+
+config/serviceAccountKey.json
