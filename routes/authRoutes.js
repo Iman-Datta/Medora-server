@@ -158,7 +158,6 @@ router.get("/me", authMiddleware, async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
-   
       },
     });
   } catch (error) {
@@ -200,6 +199,18 @@ router.get("/refresh-token", async (req, res) => {
     return res
       .status(401)
       .json({ message: "Invalid or expired refresh token" });
+  }
+});
+
+router.post("/fcm-token", authMiddleware, async (req, res) => {
+  try {
+    const { fcmToken } = req.body;
+    await User.findByIdAndUpdate(req.user, { fcmToken });
+    return res
+      .status(200)
+      .json({ success: true, message: "FCM Token saved successfully" });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
   }
 });
 
