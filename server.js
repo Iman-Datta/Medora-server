@@ -15,12 +15,29 @@ dotenv.config();
 const app = express();
 
 // Middleware
+const allowedOrigins = [
+  "https://medora.imandatta.com",
+  "http://localhost:5173",
+  "http://localhost:3000",
+  process.env.CLIENT_URL, // Includes whatever is in .env as well
+].filter(Boolean); // Remove undefined/empty entries
+
 app.use(
   cors({
-    origin: process.env.CLIENT_URL,
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like Postman, mobile apps, or cURL)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS blocked for origin: ${origin}`));
+      }
+    },
     credentials: true,
-  })
+  }),
 );
+
 app.use(express.json());
 app.use(cookieParser());
 
