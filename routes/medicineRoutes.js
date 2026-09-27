@@ -102,6 +102,56 @@ router.get("/", async (req, res) => {
   }
 });
 
+router.get("/history", async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    const medicines = await Medicine.find({
+      userId: req.user,
+      isActive: true,
+    });
+
+    const historyLogs = [];
+
+    medicines.forEach((med) => {
+      med.schedules.forEach((sched) => {
+        (sched.takenStatus || []).forEach((entry) => {
+          // Filter by date range if provided
+          if (startDate && entry.date < startDate) return;
+          if (endDate && entry.date > endDate) return;
+
+          historyLogs.push({
+            medicineId: med._id,
+            medicineName: med.name,
+            dosage: med.dosage,
+            form: med.form,
+            instructions: med.instructions,
+            scheduleId: sched._id,
+            time: sched.time,
+            dose: sched.dose,
+            date: entry.date,
+            status: entry.status,
+          });
+        });
+      });
+    });
+
+    // Sort by date descending (newest first), then time
+    historyLogs.sort((a, b) => {
+      if (b.date !== a.date) return b.date.localeCompare(a.date);
+      return a.time.localeCompare(b.time);
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: historyLogs.length,
+      data: historyLogs,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 router.get("/low-stock", async (req, res) => {
   try {
     const lowStockMedicines = await Medicine.find({
@@ -114,6 +164,53 @@ router.get("/low-stock", async (req, res) => {
       success: true,
       count: lowStockMedicines.length,
       data: lowStockMedicines,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get("/today", async (req, res) => {
+  try {
+    const todayStr = new Date().toISOString().split("T")[0]; // "YYYY-MM-DD"
+
+    const medicines = await Medicine.find({
+      userId: req.user,
+      isActive: true,
+    });
+
+    const todayTimeline = [];
+
+    medicines.forEach((med) => {
+      med.schedules.forEach((sched) => {
+        // Find existing record for today or default to "pending"
+        const statusRecord = sched.takenStatus.find(
+          (entry) => entry.date === todayStr,
+        );
+
+        todayTimeline.push({
+          medicineId: med._id,
+          medicineName: med.name,
+          dosage: med.dosage,
+          form: med.form,
+          instructions: med.instructions,
+          scheduleId: sched._id,
+          time: sched.time, // e.g. "08:00"
+          dose: sched.dose,
+          status: statusRecord ? statusRecord.status : "pending",
+          currentStock: med.currentStock,
+        });
+      });
+    });
+
+    // Sort timeline chronologically by time
+    todayTimeline.sort((a, b) => a.time.localeCompare(b.time));
+
+    return res.status(200).json({
+      success: true,
+      date: todayStr,
+      count: todayTimeline.length,
+      data: todayTimeline,
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -263,53 +360,6 @@ router.patch("/:id/schedule/:scheduleId/status", async (req, res) => {
       success: true,
       message: `Dose marked as ${status}`,
       data: medicine,
-    });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-router.get("/today", async (req, res) => {
-  try {
-    const todayStr = new Date().toISOString().split("T")[0]; // "YYYY-MM-DD"
-
-    const medicines = await Medicine.find({
-      userId: req.user,
-      isActive: true,
-    });
-
-    const todayTimeline = [];
-
-    medicines.forEach((med) => {
-      med.schedules.forEach((sched) => {
-        // Find existing record for today or default to "pending"
-        const statusRecord = sched.takenStatus.find(
-          (entry) => entry.date === todayStr
-        );
-
-        todayTimeline.push({
-          medicineId: med._id,
-          medicineName: med.name,
-          dosage: med.dosage,
-          form: med.form,
-          instructions: med.instructions,
-          scheduleId: sched._id,
-          time: sched.time, // e.g. "08:00"
-          dose: sched.dose,
-          status: statusRecord ? statusRecord.status : "pending",
-          currentStock: med.currentStock,
-        });
-      });
-    });
-
-    // Sort timeline chronologically by time
-    todayTimeline.sort((a, b) => a.time.localeCompare(b.time));
-
-    return res.status(200).json({
-      success: true,
-      date: todayStr,
-      count: todayTimeline.length,
-      data: todayTimeline,
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
