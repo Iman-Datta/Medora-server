@@ -14,44 +14,63 @@ dotenv.config();
 // Start express app
 const app = express();
 
-// Middleware
-const allowedOrigins = [
+const rawOrigins = [
   "https://medora.imandatta.com",
   "http://localhost:5173",
   "http://localhost:3000",
-  process.env.CLIENT_URL, // Includes whatever is in .env as well
-].filter(Boolean); // Remove undefined/empty entries
+  process.env.CLIENT_URL,
+].filter(Boolean);
 
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      // Allow requests with no origin (like Postman, mobile apps, or cURL)
-      if (!origin) return callback(null, true);
+// Strip trailing slashes from allowed origins to avoid matching errors
+const allowedOrigins = rawOrigins.map((origin) => origin.replace(/\/$/, ""));
 
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error(`CORS blocked for origin: ${origin}`));
-      }
-    },
-    credentials: true,
-  }),
-);
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow non-browser requests (Postman, cURL, server-to-server)
+    if (!origin) return callback(null, true);
 
+    const cleanOrigin = origin.replace(/\/$/, "");
+
+    if (allowedOrigins.includes(cleanOrigin)) {
+      callback(null, true);
+    } else {
+      console.error(`CORS Error: Origin ${origin} not allowed`);
+      callback(new Error(`CORS blocked for origin: ${origin}`));
+    }
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "X-Requested-With",
+    "Accept",
+  ],
+  optionsSuccessStatus: 200, // Legacy browser support
+};
+
+// Enable CORS and handle Preflight OPTIONS requests across all routes
+app.use(cors(corsOptions));
+
+// Standard Middlewares
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Connect MongoDB
 mongoose
   .connect(process.env.MONGO_URL)
   .then(() => {
     console.log("MongoDB Connected");
-    // Start background cron service for medicine dose reminders after DB connects
+    // Start background cron service for medicine dose reminders
     initNotificationCron();
   })
   .catch((error) => console.log("MongoDB Connection Error:", error));
 
-// Routes
+// Health Check Endpoint
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "OK", timestamp: new Date() });
+});
+
 const authRoutes = require("./routes/authRoutes");
 app.use("/auth", authRoutes);
 
@@ -64,7 +83,14 @@ app.use("/api/prescriptions", prescriptionRoutes);
 const notificationRoutes = require("./routes/notificationRoutes");
 app.use("/api/notifications", notificationRoutes);
 
-// Start server
+app.use((err, req, res, next) => {
+  if (err.message && err.message.includes("CORS")) {
+    return res.status(403).json({ error: err.message });
+  }
+  console.error("Internal Server Error:", err.stack);
+  res.status(500).json({ error: "Something went wrong on the server" });
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
